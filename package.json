@@ -1,0 +1,22 @@
+{
+  "name": "elm-http-server",
+  "version": "1.0.0",
+  "description": "Http Server with Elm and Node.js",
+  "author": "RGBboy",
+  "repository" : {
+    "type" : "git",
+    "url" : "https://github.com/RGBboy/elm-chat.git"
+  },
+  "private": true,
+  "main": "./lib/server",
+  "scripts": {
+    "start": "node ./lib/example-server",
+    "build": "elm-make ./src/ExampleServer.elm --output ./build/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+  },
+  "devDependencies": {
+  },
+  "license": "ISC"
+}
