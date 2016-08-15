@@ -11,7 +11,6 @@ effect module HttpServer where { command = MyCmd, subscription = MySub } exposin
 import Dict
 import Process
 import Task exposing (Task)
-import Time exposing (Time)
 import HttpServer.LowLevel as Http
 
 -- type alias Server = Http.Server
@@ -93,7 +92,7 @@ type alias SubsDict msg =
 
 
 type Server
-  = Opening Int Process.Id
+  = Opening Process.Id
   | Listening Http.Server
 
 
@@ -129,16 +128,16 @@ onEffects router cmds subs state =
           getNewServers
             `Task.andThen` \newServers ->
 
-          attemptOpen router 0 portNumber
+          attemptOpen router portNumber
             `Task.andThen` \pid ->
 
-          Task.succeed (Dict.insert portNumber (Opening 0 pid) newServers)
+          Task.succeed (Dict.insert portNumber (Opening pid) newServers)
 
         bothStep portNumber _ server getNewServers =
           Task.map (Dict.insert portNumber server) getNewServers
 
         rightStep portNumber server getNewServers =
-          closeServer server &> getNewServers
+          close server &> getNewServers
       in
         Dict.merge leftStep bothStep rightStep newEntries state.servers (Task.succeed Dict.empty)
           `Task.andThen` \newServers ->
@@ -188,8 +187,7 @@ add value maybeList =
 type Msg
   = Request Int Request
   | Die Int
-  | GoodOpen Int Http.Server
-  | BadOpen Int
+  | Open Int Http.Server
 
 
 onSelfMsg : Platform.Router msg Msg -> Msg -> State msg -> Task Never (State msg)
@@ -210,77 +208,51 @@ onSelfMsg router selfMsg state =
           Task.succeed state
 
         Just _ ->
-          attemptOpen router 0 portNumber
+          attemptOpen router portNumber
             `Task.andThen` \pid ->
 
-          Task.succeed (updateServer portNumber (Opening 0 pid) state)
+          Task.succeed (updateServer portNumber (Opening pid) state)
 
-    GoodOpen portNumber server ->
+    Open portNumber server ->
       Task.succeed (updateServer portNumber (Listening server) state)
 
-    BadOpen portNumber ->
-      case Dict.get portNumber state.servers of
-        Nothing ->
-          Task.succeed state
-
-        Just (Opening n _) ->
-          attemptOpen router (n + 1) portNumber
-            `Task.andThen` \pid ->
-
-          Task.succeed (updateServer portNumber (Opening (n + 1) pid) state)
-
-        Just (Listening _) ->
-          Task.succeed state
 
 removeServer : Int -> State msg -> State msg
 removeServer portNumber state =
   { state | servers = Dict.remove portNumber state.servers }
+
 
 updateServer : Int -> Server -> State msg -> State msg
 updateServer portNumber server state =
   { state | servers = Dict.insert portNumber server state.servers }
 
 
-attemptOpen : Platform.Router msg Msg -> Int -> Int -> Task x Process.Id
-attemptOpen router backoff portNumber =
+attemptOpen : Platform.Router msg Msg -> Int -> Task x Process.Id
+attemptOpen router portNumber =
   let
-    goodOpen server =
-      Platform.sendToSelf router (GoodOpen portNumber server)
-
-    badOpen _ =
-      Platform.sendToSelf router (BadOpen portNumber)
-
     actuallyAttemptOpen =
-      (open portNumber router `Task.andThen` goodOpen)
-        `Task.onError` badOpen
+      open router portNumber
+        `Task.andThen` \server ->
+      Platform.sendToSelf router (Open portNumber server)
   in
-    Process.spawn (after backoff &> actuallyAttemptOpen)
+    Process.spawn actuallyAttemptOpen
 
 
-
-open : Int -> Platform.Router msg Msg -> Task x Http.Server
-open portNumber router =
+open : Platform.Router msg Msg -> Int -> Task x Http.Server
+open router portNumber =
   Http.listen portNumber
     { onRequest = \request -> Platform.sendToSelf router (Request portNumber request)
     , onClose = \_ -> Platform.sendToSelf router (Die portNumber)
     }
 
-after : Int -> Task x ()
-after backoff =
-  if backoff < 1 then
-    Task.succeed ()
 
-  else
-    Process.sleep (toFloat (10 * 2 ^ backoff))
+-- CLOSE SERVER
 
 
--- CLOSE CONNECTIONS
-
-
-closeServer : Server -> Task x ()
-closeServer server =
+close : Server -> Task x ()
+close server =
   case server of
-    Opening _ pid ->
+    Opening pid ->
       Process.kill pid
 
     Listening server ->
