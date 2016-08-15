@@ -34,20 +34,18 @@ init =
 type Msg
   = Noop
   | Request HttpServer.Request
-  | Echo String
 
 
 update : Msg -> Model -> (Model, Cmd msg)
 update message model =
   case message of
-    Echo message ->
-      ( Debug.log "Request" (model + 1)
-      , Cmd.none
-      )
     Request request ->
-      ( Debug.log "Request" (model + 1)
-      , HttpServer.reply request ("Hello request " ++ toString(model))
-      )
+      let
+        newModel = model + 1
+      in
+        ( Debug.log "Request" newModel
+        , HttpServer.reply request ("Hello request " ++ toString(newModel))
+        )
     _ ->
       ( model
       , Cmd.none
